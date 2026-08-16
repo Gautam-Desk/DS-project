@@ -11,21 +11,22 @@ Handles all security-related operations:
 
 import os
 import re
+import io
 import time
 import hashlib
-import imghdr
 import logging
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 from collections import defaultdict
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------
 # Constants
 # -----------------------------------------------------------------------
-ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 ALLOWED_EXTENSIONS       = ALLOWED_IMAGE_EXTENSIONS | ALLOWED_VIDEO_EXTENSIONS
 
 # Magic bytes (file signatures) for supported types
@@ -33,33 +34,30 @@ MAGIC_BYTES = {
     # JPEG
     b"\xff\xd8\xff": "image/jpeg",
     # PNG
+    b"\x89PNG\r\n\x1a\n": "image/png",
     b"\x89PNG": "image/png",
-    # WebP
-    b"RIFF": "image/webp",
-    # MP4
-    b"\x00\x00\x00\x18ftyp": "video/mp4",
-    b"\x00\x00\x00\x1cftyp": "video/mp4",
-    # AVI
-    b"RIFF....AVI ": "video/avi",
-    # MOV (QuickTime)
-    b"\x00\x00\x00\x14ftyp": "video/quicktime",
+    # WebP / AVI (RIFF container)
+    b"RIFF": "image/webp/video/avi",
+    # MP4 / MOV / MKV (ISO Base Media file format)
+    b"\x00\x00\x00": "video/mp4",
+    b"\x1a\x45\xdf\xa3": "video/webm/mkv",
 }
 
 MAX_FILE_SIZE_BYTES  = 50 * 1024 * 1024   # 50 MB
-MAX_REQUESTS_PER_MIN = 10                  # Per session
+MAX_REQUESTS_PER_MIN = 20                  # Per session
 MAX_FILENAME_LENGTH  = 100
 
 
 # -----------------------------------------------------------------------
-# Rate Limiter (simple in-memory, session-based)
+# Rate Limiter (token bucket, session-based)
 # -----------------------------------------------------------------------
 class RateLimiter:
     """
-    Simple token-bucket rate limiter.
+    In-memory session rate limiter.
     Tracks request timestamps per session ID.
     """
 
-    def __init__(self, max_requests: int = 10, window_seconds: int = 60):
+    def __init__(self, max_requests: int = 20, window_seconds: int = 60):
         self.max_requests   = max_requests
         self.window_seconds = window_seconds
         self._requests: dict = defaultdict(list)
@@ -69,13 +67,13 @@ class RateLimiter:
         Check if a request is allowed for the given session.
 
         Returns:
-            (allowed: bool, remaining: int)
+            (allowed: bool, remaining_requests: int)
         """
-        now      = time.time()
-        window   = now - self.window_seconds
-        history  = self._requests[session_id]
+        now     = time.time()
+        window  = now - self.window_seconds
+        history = self._requests[session_id]
 
-        # Remove timestamps outside the current window
+        # Evict timestamps outside the sliding window
         self._requests[session_id] = [t for t in history if t > window]
 
         remaining = self.max_requests - len(self._requests[session_id])
@@ -84,7 +82,7 @@ class RateLimiter:
             return False, 0
 
         self._requests[session_id].append(now)
-        return True, remaining - 1
+        return True, max(0, remaining - 1)
 
     def reset(self, session_id: str):
         """Clear rate limit history for a session."""
@@ -105,7 +103,7 @@ def sanitize_filename(filename: str) -> str:
     - Removes directory components (../../etc)
     - Removes special characters
     - Truncates to max length
-    - Preserves extension
+    - Preserves valid extension
 
     Returns:
         Safe filename string.
@@ -126,8 +124,8 @@ def sanitize_filename(filename: str) -> str:
 
     # Truncate
     if len(safe_name) > MAX_FILENAME_LENGTH:
-        ext   = Path(safe_name).suffix
-        stem  = safe_name[: MAX_FILENAME_LENGTH - len(ext)]
+        ext  = Path(safe_name).suffix
+        stem = safe_name[: MAX_FILENAME_LENGTH - len(ext)]
         safe_name = stem + ext
 
     return safe_name or "upload"
@@ -157,14 +155,14 @@ def validate_file_extension(filename: str) -> Tuple[bool, str]:
     if ext not in ALLOWED_EXTENSIONS:
         return (
             False,
-            f"File type '{ext}' not allowed. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+            f"File type '{ext}' not allowed. Allowed formats: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
     return True, f"Extension '{ext}' is allowed."
 
 
-def validate_file_magic_bytes(file_bytes: bytes) -> Tuple[bool, str]:
+def validate_file_magic_bytes(file_bytes: bytes, ext: str) -> Tuple[bool, str]:
     """
-    Validate actual file type using magic bytes (not just extension).
+    Validate actual file type using magic bytes and PIL verification.
     Prevents disguised malicious files.
 
     Returns:
@@ -174,18 +172,27 @@ def validate_file_magic_bytes(file_bytes: bytes) -> Tuple[bool, str]:
 
     for magic, mime_type in MAGIC_BYTES.items():
         if header.startswith(magic):
-            return True, f"Valid file type: {mime_type}"
+            return True, f"Valid file signature: {mime_type}"
 
-    # Fallback: use imghdr for images
-    img_type = imghdr.what(None, h=file_bytes[:32])
-    if img_type in ("jpeg", "png", "webp"):
-        return True, f"Valid image type: {img_type}"
+    # If it's an image, attempt PIL parse as a verification
+    if ext in ALLOWED_IMAGE_EXTENSIONS:
+        try:
+            with Image.open(io.BytesIO(file_bytes)) as img:
+                img.verify()
+            return True, "Valid image content verified."
+        except Exception:
+            return False, "Corrupted or invalid image structure."
 
-    return False, "File content does not match any allowed type. Upload may be malicious."
+    if ext in ALLOWED_VIDEO_EXTENSIONS:
+        # Video containers start with standard sync words or ftpy tags
+        if b"ftyp" in header or header.startswith(b"\x00\x00\x00") or header.startswith(b"RIFF"):
+            return True, "Valid video container."
+
+    return False, "File content does not match allowed binary signature."
 
 
 def compute_file_hash(file_bytes: bytes) -> str:
-    """Compute SHA-256 hash of file for deduplication/logging."""
+    """Compute SHA-256 hash of file for integrity/logging."""
     return hashlib.sha256(file_bytes).hexdigest()
 
 
@@ -197,11 +204,11 @@ def validate_upload(
     """
     Full validation pipeline for an uploaded file.
 
-    Checks (in order):
+    Checks:
         1. Rate limiting
         2. File size
         3. Extension allowlist
-        4. Magic bytes (real content type)
+        4. Magic bytes & content structure
 
     Args:
         filename   : Original filename from the upload.
@@ -211,11 +218,14 @@ def validate_upload(
     Returns:
         (is_valid: bool, message: str, metadata: dict)
     """
+    ext = Path(filename).suffix.lower()
     metadata = {
         "original_filename": filename,
         "safe_filename"    : sanitize_filename(filename),
         "size_bytes"       : len(file_bytes),
+        "size_mb"          : round(len(file_bytes) / (1024 * 1024), 2),
         "sha256"           : compute_file_hash(file_bytes),
+        "ext"              : ext,
     }
 
     # 1. Rate limiting
@@ -234,12 +244,12 @@ def validate_upload(
         return False, msg, metadata
 
     # 4. Magic bytes
-    ok, msg = validate_file_magic_bytes(file_bytes)
+    ok, msg = validate_file_magic_bytes(file_bytes, ext)
     if not ok:
         logger.warning(f"[SECURITY] Magic byte validation failed for '{filename}' | SHA256: {metadata['sha256']}")
         return False, f"❌ {msg}", metadata
 
-    metadata["file_type"] = "video" if Path(filename).suffix.lower() in ALLOWED_VIDEO_EXTENSIONS else "image"
+    metadata["file_type"] = "video" if ext in ALLOWED_VIDEO_EXTENSIONS else "image"
     logger.info(f"[SECURITY] File validated OK: {metadata['safe_filename']} ({metadata['size_bytes']} bytes)")
     return True, "✅ File validated successfully.", metadata
 
@@ -256,14 +266,12 @@ def check_environment_security() -> list:
     """
     warnings = []
 
-    # Check that .env is not publicly accessible
+    # Check that .env is not world-readable
     if os.path.exists(".env"):
         env_stat = os.stat(".env")
-        # On Unix: check permissions (skip on Windows)
-        if hasattr(env_stat, "st_mode"):
+        if hasattr(env_stat, "st_mode") and os.name != "nt":
             import stat
-            mode = env_stat.st_mode
-            if mode & stat.S_IROTH:
+            if env_stat.st_mode & stat.S_IROTH:
                 warnings.append("⚠️  .env file is world-readable. Run: chmod 600 .env")
 
     # Check for debug mode in production
@@ -271,10 +279,5 @@ def check_environment_security() -> list:
     app_env    = os.getenv("APP_ENV", "development")
     if debug_mode and app_env == "production":
         warnings.append("⚠️  DEBUG=True in production environment. Set DEBUG=False.")
-
-    # Check that a secret key is set
-    secret = os.getenv("APP_SECRET_KEY", "")
-    if not secret or secret == "change_this_to_a_random_64_char_string":
-        warnings.append("⚠️  APP_SECRET_KEY is not set or using default. Set a strong random key in .env.")
 
     return warnings

@@ -1,214 +1,121 @@
-# 🔍 Deepfake Detection System
+# 🛡️ DeepGuard AI — Deepfake Detection & Forensic Suite
 
-> **AI-powered deepfake image & video detection using EfficientNet-B4 + GradCAM explainability**
+> **State-of-the-Art Deepfake Vision System combining Spatial Neural Attention (EfficientNet-B4 + GradCAM) with Frequency-Domain Forensic Spectrum Analysis (2D FFT).**
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.10%20--%203.14-blue.svg)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.1+-red.svg)](https://pytorch.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-brightgreen.svg)](https://streamlit.io)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.61+-brightgreen.svg)](https://streamlit.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 🎯 What This Does
+## 🌟 Key Capabilities
 
-Detects AI-generated deepfake faces in images and videos using:
-- **EfficientNet-B4** fine-tuned binary classifier (Real vs Fake)
-- **MTCNN** face detection and alignment
-- **GradCAM** heatmaps to show *why* a face is flagged as fake
-- **Streamlit** web app with file security validation and rate limiting
+1. **💬 Conversational Forensic AI Assistant**
+   - Natural language chat with DeepGuard AI to discuss deepfake generation methods, explainability, and forensic insights.
+2. **📷 Multi-Modal Deepfake Detection**
+   - Single portrait and video multi-frame temporal inspection.
+   - Real-time **Live Webcam snapshot** detection directly in your browser.
+3. **🔬 Dual-Domain Explainability**
+   - **Spatial GradCAM Heatmaps**: Identifies suspicious boundary warping, eye/pupil anomalies, and facial blending seams.
+   - **Frequency Domain (2D FFT Magnitude Spectrum)**: Exposes periodic high-frequency checkerboard grid patterns characteristic of GAN and Latent Diffusion upsampling layers.
+4. **🎬 Video Multi-Frame Timeline**
+   - Analyzes temporal frame sequences, flagging peak suspicious timestamps and worst-frame GradCAM attention.
+5. **📄 Instant Forensic PDF / Text Report Export**
+   - One-click export of analysis logs with cryptographic SHA-256 fingerprint, risk tier, and anomaly breakdown.
 
 ---
 
-## 📁 Project Structure
+## 📁 Project Architecture
 
 ```
-deepfake-detection/
-├── .gitignore                  ← Protects secrets, data, model weights
-├── .env.example                ← Environment variable template (safe to commit)
-├── config.yaml                 ← All hyperparameters & settings
-├── requirements.txt            ← Python dependencies
-│
-├── src/
-│   ├── model.py                ← EfficientNet-B4 architecture
-│   ├── preprocess.py           ← Face detection + augmentation pipeline
-│   ├── data_loader.py          ← PyTorch Dataset & DataLoader
-│   ├── train.py                ← Training loop (AMP, early stopping)
-│   ├── evaluate.py             ← Metrics, ROC, confusion matrix
-│   ├── gradcam.py              ← GradCAM explainability
-│   ├── predict.py              ← Image & video inference engine
-│   └── security.py             ← File validation, rate limiting
-│
+DSproject/
 ├── app/
-│   └── app.py                  ← Streamlit web application
-│
-├── .streamlit/
-│   ├── config.toml             ← Streamlit deployment config
-│   └── secrets.toml.example   ← Secrets template (safe to commit)
-│
-├── data/                       ← GITIGNORED — your datasets go here
-└── models/                     ← GITIGNORED — trained model weights go here
+│   └── app.py                  ← Streamlit interactive forensic web application
+├── src/
+│   ├── model.py                ← Torchvision EfficientNet-B4/B0 binary classifier
+│   ├── preprocess.py           ← OpenCV face detector & 2D FFT spectral analyzer
+│   ├── data_loader.py          ← PyTorch dataset & dataloaders
+│   ├── train.py                ← Two-phase training loop with Cosine Annealing
+│   ├── evaluate.py             ← ROC curves, confusion matrix, precision-recall
+│   ├── gradcam.py              ← High-resolution GradCAM explainability engine
+│   ├── predict.py              ← Unified high-level inference engine
+│   ├── security.py             ← Magic-byte verification, sanitization, rate limiter
+│   └── generate_sample_data.py ← Synthetic benchmark dataset generator
+├── notebooks/
+│   └── Deepfake_Detection_Training_GPU.ipynb ← 1-click Colab/Kaggle GPU training
+├── tests/
+│   └── test_pipeline.py        ← Automated end-to-end test suite
+├── config.yaml                 ← Hyperparameters, paths & thresholds
+├── requirements.txt            ← Clean Python package dependencies
+└── README.md
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start Guide
 
-### 1. Clone & Setup
+### 1. Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/deepfake-detection.git
-cd deepfake-detection
-
-# Create virtual environment
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # Linux/Mac
+# Clone the repository
+git clone https://github.com/Gautam-Desk/DS-project.git
+cd DS-project
 
 # Install dependencies
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
+### 2. Generate Sample Dataset & Train Locally
 
 ```bash
-# Copy the template
-copy .env.example .env         # Windows
-# cp .env.example .env         # Linux/Mac
+# Generate sample benchmark dataset
+python -m src.generate_sample_data
 
-# Edit .env with your settings (never commit this file!)
-notepad .env
-```
-
-### 3. Download Dataset
-
-Download from Kaggle: [Real and Fake Face Detection](https://www.kaggle.com/datasets/ciplab/real-and-fake-face-detection)
-
-Organize as:
-```
-data/splits/
-    train/real/   *.jpg
-    train/fake/   *.jpg
-    val/real/
-    val/fake/
-    test/real/
-    test/fake/
-```
-
-### 4. Train the Model
-
-```bash
+# Train the model
 python -m src.train
+
+# Evaluate on test split
+python -m src.evaluate
 ```
 
-Training output:
-```
-Using device: cuda
-Loading datasets...
-[Dataset] Loaded 14000 samples: 7000 real, 7000 fake
-Starting training for 30 epochs (5 warm-up + 25 fine-tune)
-
-Epoch [01/30] Train Loss: 0.6821 | Train AUC: 0.7234 | Val Loss: 0.5932 | Val AUC: 0.8105
-✅ New best model saved! Val AUC: 0.8105
-...
-Epoch [18/30] Train Loss: 0.1823 | Train AUC: 0.9712 | Val Loss: 0.1991 | Val AUC: 0.9634
-✅ New best model saved! Val AUC: 0.9634
-```
-
-### 5. Evaluate
+### 3. Run Automated Tests
 
 ```bash
-python -m src.evaluate --model models/best_model.pth --split test
+python -m unittest tests/test_pipeline.py
 ```
 
-### 6. Run Web App
+### 4. Launch the Interactive Web Application
 
 ```bash
 streamlit run app/app.py
 ```
-Open http://localhost:8501
+
+Open your browser at **`http://localhost:8501`**
 
 ---
 
-## 🌐 Deploy to Streamlit Cloud (Free)
+## ☁️ Train on Free Cloud GPUs (Google Colab & Kaggle)
 
-1. Push your code to GitHub:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin https://github.com/YOUR_USERNAME/deepfake-detection.git
-   git push -u origin main
-   ```
-
-2. Upload your trained model to [Hugging Face Hub](https://huggingface.co) or GitHub Releases
-
-3. Go to [share.streamlit.io](https://share.streamlit.io) → **New app**
-
-4. Select your repo → set **Main file**: `app/app.py`
-
-5. Add secrets under **Advanced Settings**:
-   ```toml
-   [general]
-   SECRET_KEY = "your_secret_key"
-   ```
-
-6. Click **Deploy!** 🚀
+For training on large datasets (Celeb-DF, FaceForensics++, DFDC):
+1. Open [`notebooks/Deepfake_Detection_Training_GPU.ipynb`](notebooks/Deepfake_Detection_Training_GPU.ipynb) in Google Colab or Kaggle.
+2. Enable GPU hardware acceleration (**T4 / V100 / A100**).
+3. Run all cells to fine-tune the model and export `models/best_model.pth`.
 
 ---
 
-## 🔒 Security Features
+## 🔒 Built-in Security Architecture
 
-| Feature | Details |
+| Security Feature | Implementation Details |
 |---|---|
-| **`.gitignore`** | Blocks datasets, model weights, `.env`, secrets from GitHub |
-| **Magic byte validation** | Checks actual file content, not just extension |
-| **File size limit** | Max 50 MB per upload |
-| **Rate limiting** | Max 10 requests/minute per session |
-| **Filename sanitization** | Prevents path traversal attacks |
-| **Environment check** | Warns about debug mode in production |
-| **No hardcoded secrets** | All credentials via `.env` or Streamlit secrets |
+| **Magic Byte Verification** | Inspects binary file signatures (JPEG, PNG, WebP, MP4, MOV) to prevent MIME spoofing. |
+| **Path Traversal Shield** | Regex sanitization strips relative directory sequences (`../`) and null bytes. |
+| **Session Rate Limiter** | Sliding window rate limiting prevents resource exhaustion. |
+| **Memory Isolation** | Safe cleanup of temporary video chunks and hook de-allocation. |
 
 ---
 
-## 📊 Expected Performance
+## 📄 License & Disclaimer
 
-| Model | Accuracy | AUC-ROC |
-|---|---|---|
-| ResNet-50 (baseline) | ~88% | ~0.93 |
-| **EfficientNet-B4 (ours)** | **~93%** | **~0.97** |
-
-Tested on FaceForensics++ (c23 compression).
-
----
-
-## 🛠️ Tech Stack
-
-| Category | Tool |
-|---|---|
-| Deep Learning | PyTorch 2.1 |
-| Model | EfficientNet-B4 |
-| Face Detection | MTCNN (facenet-pytorch) |
-| Augmentation | Albumentations |
-| Explainability | GradCAM (manual implementation) |
-| Web App | Streamlit |
-| Visualization | Plotly |
-
----
-
-## 📚 References
-
-1. Rössler et al. — *FaceForensics++*, ICCV 2019
-2. Tan & Le — *EfficientNet*, ICML 2019
-3. Selvaraju et al. — *GradCAM*, ICCV 2017
-4. Li et al. — *Celeb-DF*, CVPR 2020
-
----
-
-## 📄 License
-
-MIT License — see [LICENSE](LICENSE)
-
----
-
-> ⚠️ **Ethical Note**: This tool is built for research and educational purposes.
-> Use responsibly. Do not use to create or spread deepfakes.
+This project is licensed under the **MIT License**.  
+*Disclaimer: This software is developed for research, forensic validation, and educational purposes.*
