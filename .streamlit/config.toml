@@ -1,20 +1,16 @@
-# ============================================================
-#  Streamlit Cloud Deployment Config
-#  This file MUST be named: .streamlit/config.toml
-# ============================================================
-
 [server]
-maxUploadSize = 50          # MB — max file upload size
-headless      = true        # Required for cloud deployment
-enableCORS    = false
-enableXsrfProtection = true
+maxUploadSize        = 50
+headless             = true
+enableCORS           = true
+enableXsrfProtection = false
 
 [browser]
-gatherUsageStats = false    # Disable telemetry
+gatherUsageStats = false
 
 [theme]
-base            = "dark"
-backgroundColor = "#0f0c29"
-secondaryBackgroundColor = "#1a1a2e"
-textColor       = "#e2e8f0"
-font            = "sans serif"
+base                   = "dark"
+backgroundColor        = "#0a0a0f"
+secondaryBackgroundColor = "#13131a"
+textColor              = "#e2e8f0"
+primaryColor           = "#7c6fcd"
+font                   = "sans serif"
