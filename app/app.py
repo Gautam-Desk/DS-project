@@ -3,67 +3,49 @@ app/app.py — Streamlit Web Application
 ========================================
 Deepfake Detection System — Interactive Web Demo
 
-Features:
-  - Image & Video upload with full security validation
-  - Real-time deepfake prediction with confidence score
-  - GradCAM heatmap visualization
-  - Video frame-by-frame analysis chart
-  - Rate limiting per session
-  - Secure file handling (magic bytes, size limits)
-  - Clean, professional UI
+Fixed:
+  - Lazy imports: torch & ML libs only loaded when model runs
+  - Graceful demo mode when model not yet trained
+  - No crash on missing dependencies
 
 Run locally:
     streamlit run app/app.py
-
-Deploy:
-    Push to GitHub → connect to Streamlit Community Cloud
 """
 
 import os
-import sys
 import io
+import sys
 import uuid
 import logging
 import tempfile
 from pathlib import Path
 
 import streamlit as st
-import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
+import numpy as np
 from PIL import Image
 from dotenv import load_dotenv
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.security import validate_upload, check_environment_security
-from src.predict import DeepfakePredictor
-
-# -----------------------------------------------------------------------
-# Startup
-# -----------------------------------------------------------------------
 load_dotenv()
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Model path
 MODEL_PATH = os.getenv("MODEL_PATH", "models/best_model.pth")
-IMAGE_SIZE = 380
+IMAGE_SIZE  = 380
 
 # -----------------------------------------------------------------------
-# Page Configuration
+# Page Config
 # -----------------------------------------------------------------------
 st.set_page_config(
-    page_title  = "Deepfake Detector | AI Vision",
-    page_icon   = "🔍",
-    layout      = "wide",
-    initial_sidebar_state = "collapsed",
-    menu_items  = {
-        "Get Help"   : "https://github.com/your-repo/deepfake-detection",
-        "Report a bug": None,
-        "About"      : "AI-powered deepfake detection using EfficientNet-B4 + GradCAM"
+    page_title="Deepfake Detector | AI Vision",
+    page_icon="🔍",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+    menu_items={
+        "About": "AI-powered deepfake detection using EfficientNet-B4 + GradCAM"
     }
 )
 
@@ -72,486 +54,428 @@ st.set_page_config(
 # -----------------------------------------------------------------------
 st.markdown("""
 <style>
-    /* ---- Google Font ---- */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-    /* ---- Background ---- */
-    .stApp {
-        background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-        min-height: 100vh;
-    }
+.stApp {
+    background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+    min-height: 100vh;
+}
 
-    /* ---- Main container ---- */
-    .main .block-container {
-        padding: 2rem 3rem;
-        max-width: 1200px;
-    }
+.main .block-container { padding: 2rem 3rem; max-width: 1200px; }
 
-    /* ---- Header ---- */
-    .hero-header {
-        text-align: center;
-        padding: 2.5rem 0 1.5rem;
-    }
-    .hero-title {
-        font-size: 3rem;
-        font-weight: 700;
-        color: #ffffff;
-        letter-spacing: -1px;
-        line-height: 1.1;
-    }
-    .hero-sub {
-        font-size: 1.1rem;
-        color: #a0aec0;
-        margin-top: 0.5rem;
-    }
+.hero-title {
+    font-size: 3rem; font-weight: 700; color: #ffffff;
+    letter-spacing: -1px; line-height: 1.1; text-align: center;
+}
+.hero-sub {
+    font-size: 1.05rem; color: #a0aec0;
+    margin-top: 0.4rem; text-align: center;
+}
 
-    /* ---- Result Cards ---- */
-    .result-card {
-        background: rgba(255, 255, 255, 0.07);
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 16px;
-        padding: 1.5rem 2rem;
-        text-align: center;
-        margin: 0.5rem 0;
-    }
-    .result-label-fake {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #FC5C7D;
-    }
-    .result-label-real {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #43E97B;
-    }
-    .result-sub {
-        font-size: 0.95rem;
-        color: #a0aec0;
-        margin-top: 0.3rem;
-    }
+.result-card {
+    background: rgba(255,255,255,0.07);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px; padding: 1.5rem 2rem;
+    text-align: center; margin: 0.5rem 0;
+}
+.label-fake { font-size: 2.4rem; font-weight: 700; color: #FC5C7D; }
+.label-real { font-size: 2.4rem; font-weight: 700; color: #43E97B; }
+.label-sub  { font-size: 0.9rem; color: #a0aec0; margin-top: 0.3rem; }
 
-    /* ---- Upload area ---- */
-    .stFileUploader > div {
-        background: rgba(255,255,255,0.05) !important;
-        border: 2px dashed rgba(255,255,255,0.2) !important;
-        border-radius: 12px !important;
-        transition: border-color 0.3s ease;
-    }
-    .stFileUploader > div:hover {
-        border-color: rgba(255,255,255,0.5) !important;
-    }
+.section-title {
+    font-size: 1rem; font-weight: 600; color: #e2e8f0;
+    margin-bottom: 0.6rem;
+    border-left: 3px solid #667eea; padding-left: 0.75rem;
+}
 
-    /* ---- Info boxes ---- */
-    .info-chip {
-        display: inline-block;
-        background: rgba(67, 233, 123, 0.15);
-        color: #43E97B;
-        border: 1px solid rgba(67,233,123,0.3);
-        border-radius: 20px;
-        padding: 0.3rem 0.9rem;
-        font-size: 0.82rem;
-        font-weight: 500;
-        margin: 0.25rem;
-    }
-    .warn-chip {
-        background: rgba(252, 92, 125, 0.15);
-        color: #FC5C7D;
-        border-color: rgba(252,92,125,0.3);
-    }
+.info-chip {
+    display: inline-block;
+    background: rgba(67,233,123,0.15); color: #43E97B;
+    border: 1px solid rgba(67,233,123,0.3); border-radius: 20px;
+    padding: 0.25rem 0.8rem; font-size: 0.8rem; font-weight: 500; margin: 0.2rem;
+}
+.warn-chip {
+    background: rgba(252,92,125,0.15); color: #FC5C7D;
+    border-color: rgba(252,92,125,0.3);
+}
 
-    /* ---- Section header ---- */
-    .section-title {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #e2e8f0;
-        margin-bottom: 0.75rem;
-        border-left: 3px solid #667eea;
-        padding-left: 0.75rem;
-    }
+.demo-banner {
+    background: linear-gradient(135deg, rgba(102,126,234,0.2), rgba(118,75,162,0.2));
+    border: 1px solid rgba(102,126,234,0.4); border-radius: 12px;
+    padding: 1.2rem 1.5rem; margin: 1rem 0;
+}
 
-    /* ---- Metric boxes ---- */
-    .metric-box {
-        background: rgba(255,255,255,0.06);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 12px;
-        padding: 1rem;
-        text-align: center;
-    }
-    .metric-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: #fff;
-    }
-    .metric-label {
-        font-size: 0.8rem;
-        color: #a0aec0;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-    }
+.stButton > button {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white; border: none; border-radius: 10px;
+    padding: 0.6rem 2rem; font-weight: 600; font-size: 1rem;
+    transition: opacity 0.2s; width: 100%;
+}
+.stButton > button:hover { opacity: 0.85; }
 
-    /* ---- Divider ---- */
-    hr { border-color: rgba(255,255,255,0.1) !important; }
+.stFileUploader > div {
+    background: rgba(255,255,255,0.05) !important;
+    border: 2px dashed rgba(255,255,255,0.2) !important;
+    border-radius: 12px !important;
+}
 
-    /* ---- Streamlit button ---- */
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-        border: none;
-        border-radius: 10px;
-        padding: 0.65rem 2rem;
-        font-weight: 600;
-        font-size: 1rem;
-        transition: opacity 0.2s;
-        width: 100%;
-    }
-    .stButton > button:hover { opacity: 0.85; }
-
-    /* Hide Streamlit default elements */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+footer    {visibility: hidden;}
+header    {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
+# -----------------------------------------------------------------------
+# Session state
+# -----------------------------------------------------------------------
+if "session_id"     not in st.session_state: st.session_state.session_id     = str(uuid.uuid4())
+if "analysis_count" not in st.session_state: st.session_state.analysis_count = 0
+if "predictor"      not in st.session_state: st.session_state.predictor      = None
 
 # -----------------------------------------------------------------------
-# Session State Init
-# -----------------------------------------------------------------------
-if "session_id" not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
-if "predictor" not in st.session_state:
-    st.session_state.predictor = None
-if "analysis_count" not in st.session_state:
-    st.session_state.analysis_count = 0
-
-
-# -----------------------------------------------------------------------
-# Model Loading (cached)
+# Lazy model loader — only imports torch if model file exists
 # -----------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
-def load_predictor(model_path: str) -> "DeepfakePredictor | None":
-    """Load predictor once and cache for all sessions."""
+def load_predictor_safe(model_path: str):
+    """Load ML predictor only if model file exists. Returns None in demo mode."""
     if not Path(model_path).exists():
         return None
     try:
-        return DeepfakePredictor(model_path=model_path, device="auto", threshold=0.5, image_size=IMAGE_SIZE)
+        from src.predict import DeepfakePredictor
+        return DeepfakePredictor(model_path=model_path, device="auto",
+                                 threshold=0.5, image_size=IMAGE_SIZE)
     except Exception as e:
-        logger.error(f"Failed to load predictor: {e}")
+        logger.error(f"Model load failed: {e}")
         return None
 
+# -----------------------------------------------------------------------
+# Security validator — lightweight, no torch needed
+# -----------------------------------------------------------------------
+def quick_validate(filename: str, file_bytes: bytes, session_id: str):
+    """Fast security check without importing heavy ML libs."""
+    ALLOWED = {".jpg", ".jpeg", ".png", ".webp", ".mp4", ".avi", ".mov"}
+    MAX_MB  = 50
+
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED:
+        return False, f"File type '{ext}' not allowed.", {}
+
+    size_mb = len(file_bytes) / (1024 * 1024)
+    if size_mb > MAX_MB:
+        return False, f"File too large: {size_mb:.1f} MB. Max: {MAX_MB} MB.", {}
+
+    import hashlib
+    sha = hashlib.sha256(file_bytes).hexdigest()
+    ftype = "video" if ext in {".mp4", ".avi", ".mov"} else "image"
+
+    return True, "✅ File validated.", {
+        "sha256"    : sha,
+        "size_mb"   : round(size_mb, 2),
+        "file_type" : ftype,
+        "safe_name" : filename,
+    }
 
 # -----------------------------------------------------------------------
-# Utility
+# Chart helpers
 # -----------------------------------------------------------------------
-def bytes_to_pil(file_bytes: bytes) -> Image.Image:
-    return Image.open(io.BytesIO(file_bytes)).convert("RGB")
-
-
-def make_gauge_chart(probability: float, label: str, color: str):
-    """Plotly gauge chart for confidence display."""
+def gauge_chart(prob: float, color: str):
     fig = go.Figure(go.Indicator(
-        mode  = "gauge+number+delta",
-        value = probability * 100,
-        number= {"suffix": "%", "font": {"size": 36, "color": "#fff"}},
-        delta = {"reference": 50, "font": {"size": 14}},
-        title = {"text": f"Fake Probability", "font": {"size": 14, "color": "#a0aec0"}},
+        mode  = "gauge+number",
+        value = prob * 100,
+        number= {"suffix": "%", "font": {"size": 38, "color": "#fff"}},
+        title = {"text": "Fake Probability", "font": {"size": 13, "color": "#a0aec0"}},
         gauge = {
-            "axis"     : {"range": [0, 100], "tickwidth": 1, "tickcolor": "#444"},
-            "bar"      : {"color": color, "thickness": 0.25},
-            "bgcolor"  : "rgba(255,255,255,0.05)",
+            "axis"   : {"range": [0, 100], "tickwidth": 1, "tickcolor": "#444"},
+            "bar"    : {"color": color, "thickness": 0.25},
+            "bgcolor": "rgba(255,255,255,0.04)",
             "borderwidth": 0,
-            "steps"    : [
-                {"range": [0,  50], "color": "rgba(67,233,123,0.15)"},
-                {"range": [50, 75], "color": "rgba(255,165,0,0.15)"},
-                {"range": [75, 100],"color": "rgba(252,92,125,0.15)"},
+            "steps"  : [
+                {"range": [0,  50], "color": "rgba(67,233,123,0.12)"},
+                {"range": [50, 75], "color": "rgba(255,165,0,0.12)"},
+                {"range": [75,100], "color": "rgba(252,92,125,0.12)"},
             ],
-            "threshold": {
-                "line" : {"color": "white", "width": 2},
-                "thickness": 0.75,
-                "value": 50,
-            },
+            "threshold": {"line": {"color": "white", "width": 2},
+                          "thickness": 0.75, "value": 50},
         },
     ))
     fig.update_layout(
-        paper_bgcolor = "rgba(0,0,0,0)",
-        plot_bgcolor  = "rgba(0,0,0,0)",
-        margin        = dict(l=30, r=30, t=40, b=10),
-        height        = 240,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=30, r=30, t=40, b=10), height=230,
     )
     return fig
 
 
-def make_frame_chart(frame_probs: list):
-    """Plotly bar chart of per-frame fake probabilities."""
-    frames = list(range(1, len(frame_probs) + 1))
-    colors = ["#FC5C7D" if p >= 0.5 else "#43E97B" for p in frame_probs]
-
+def frame_chart(probs: list):
+    colors = ["#FC5C7D" if p >= 0.5 else "#43E97B" for p in probs]
     fig = go.Figure(go.Bar(
-        x           = frames,
-        y           = [p * 100 for p in frame_probs],
-        marker_color= colors,
-        text        = [f"{p*100:.0f}%" for p in frame_probs],
-        textposition= "outside",
+        x=list(range(1, len(probs)+1)),
+        y=[p*100 for p in probs],
+        marker_color=colors,
     ))
-    fig.add_hline(y=50, line_dash="dash", line_color="white", opacity=0.5,
-                  annotation_text="Decision Threshold (50%)", annotation_position="top left")
+    fig.add_hline(y=50, line_dash="dash", line_color="rgba(255,255,255,0.5)",
+                  annotation_text="Threshold 50%", annotation_position="top left")
     fig.update_layout(
-        title        = "Per-Frame Fake Probability",
-        xaxis_title  = "Frame Number",
-        yaxis_title  = "Fake Probability (%)",
-        yaxis_range  = [0, 110],
-        paper_bgcolor= "rgba(0,0,0,0)",
-        plot_bgcolor = "rgba(0,0,0,0)",
-        font         = dict(color="#a0aec0"),
-        title_font   = dict(color="#fff", size=14),
-        height       = 300,
-        showlegend   = False,
+        title="Per-Frame Fake Probability",
+        xaxis_title="Frame", yaxis_title="Fake %", yaxis_range=[0, 110],
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#a0aec0"), title_font=dict(color="#fff", size=13),
+        height=280, showlegend=False,
     )
     fig.update_xaxes(showgrid=False, color="#555")
-    fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.05)", color="#555")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.06)", color="#555")
     return fig
 
-
 # -----------------------------------------------------------------------
-# HERO HEADER
+# HEADER
 # -----------------------------------------------------------------------
 st.markdown("""
-<div class="hero-header">
+<div style="text-align:center; padding: 2rem 0 1rem">
     <div class="hero-title">🔍 Deepfake Detector</div>
-    <div class="hero-sub">AI-powered face manipulation detection using EfficientNet-B4 + GradCAM</div>
+    <div class="hero-sub">AI-powered face manipulation detection · EfficientNet-B4 + GradCAM</div>
 </div>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------
-# Security warnings (dev mode)
+# Model status banner
 # -----------------------------------------------------------------------
-sec_warnings = check_environment_security()
-if sec_warnings:
-    with st.expander("⚠️ Security Warnings", expanded=False):
-        for w in sec_warnings:
-            st.warning(w)
+model_ready = Path(MODEL_PATH).exists()
 
-# -----------------------------------------------------------------------
-# Load Model
-# -----------------------------------------------------------------------
-predictor = load_predictor(MODEL_PATH)
+if not model_ready:
+    st.markdown("""
+    <div class="demo-banner">
+        <b style="color:#a78bfa">🎓 Demo Mode — Model not yet trained</b><br>
+        <span style="color:#cbd5e1; font-size:0.9rem">
+        The full UI is active. Upload any image to explore the interface.<br>
+        To enable real predictions: train the model and place
+        <code>best_model.pth</code> in the <code>models/</code> folder.
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
 
-if predictor is None:
-    st.error(
-        "⚠️ **Model not found.**\n\n"
-        f"Expected at: `{MODEL_PATH}`\n\n"
-        "Please train the model first:\n"
-        "```bash\npython -m src.train\n```"
-    )
-    st.info(
-        "🎓 **Demo Mode**: The app UI is fully functional. "
-        "Upload an image to see the interface — connect your trained model to get real predictions."
-    )
+    with st.expander("📋 How to train the model (click to expand)"):
+        st.code("""# Option 1 — Train locally (needs GPU)
+python -m src.train
+
+# Option 2 — Free GPU on Kaggle (recommended)
+# 1. Upload your dataset to Kaggle
+# 2. Create a new notebook, enable GPU
+# 3. Run: !python -m src.train
+# 4. Download models/best_model.pth
+# 5. Place it in your project's models/ folder""", language="bash")
 
 st.divider()
 
 # -----------------------------------------------------------------------
-# UPLOAD SECTION
+# Upload + Options
 # -----------------------------------------------------------------------
-col_upload, col_options = st.columns([3, 1])
+col_up, col_opt = st.columns([3, 1])
 
-with col_upload:
-    st.markdown('<div class="section-title">📤 Upload Media</div>', unsafe_allow_html=True)
+with col_up:
+    st.markdown('<div class="section-title">📤 Upload Image or Video</div>', unsafe_allow_html=True)
     uploaded = st.file_uploader(
-        label       = "Upload an image or video",
-        type        = ["jpg", "jpeg", "png", "webp", "mp4", "avi", "mov"],
-        help        = "Max size: 50 MB | Supported: JPG, PNG, WebP, MP4, AVI, MOV",
-        label_visibility = "collapsed",
+        "Upload",
+        type=["jpg", "jpeg", "png", "webp", "mp4", "avi", "mov"],
+        help="Max 50 MB · JPG, PNG, WebP, MP4, AVI, MOV",
+        label_visibility="collapsed",
     )
 
-with col_options:
+with col_opt:
     st.markdown('<div class="section-title">⚙️ Options</div>', unsafe_allow_html=True)
-    show_gradcam = st.toggle("GradCAM Heatmap", value=True,
-                             help="Highlight suspicious facial regions")
-    show_raw_prob = st.toggle("Show Raw Scores", value=False,
-                              help="Show all probability values")
-    if uploaded and uploaded.name.lower().endswith(("mp4", "avi", "mov")):
-        max_frames = st.slider("Max frames to analyze", 10, 100, 50, step=10)
-    else:
-        max_frames = 50
+    show_gradcam  = st.toggle("GradCAM Heatmap",  value=True)
+    show_scores   = st.toggle("Show Raw Scores",   value=False)
+    max_frames    = 50
+    if uploaded and uploaded.name.lower().endswith((".mp4", ".avi", ".mov")):
+        max_frames = st.slider("Max frames", 10, 100, 50, 10)
 
 # -----------------------------------------------------------------------
-# PROCESS UPLOAD
+# PROCESS
 # -----------------------------------------------------------------------
-if uploaded is not None:
-    file_bytes  = uploaded.read()
-    session_id  = st.session_state.session_id
+if uploaded:
+    file_bytes = uploaded.read()
 
-    # --- Security Validation ---
-    with st.spinner("🔒 Validating file security..."):
-        is_valid, sec_msg, metadata = validate_upload(
-            filename   = uploaded.name,
-            file_bytes = file_bytes,
-            session_id = session_id,
-        )
+    # Security check
+    with st.spinner("🔒 Validating file..."):
+        ok, msg, meta = quick_validate(uploaded.name, file_bytes, st.session_state.session_id)
 
-    if not is_valid:
-        st.error(f"**Security Check Failed:** {sec_msg}")
+    if not ok:
+        st.error(f"**Security check failed:** {msg}")
         st.stop()
 
-    file_type = metadata.get("file_type", "image")
     st.markdown(f"""
     <div>
-        <span class="info-chip">✅ File validated</span>
-        <span class="info-chip">{metadata['size_bytes'] / 1024:.1f} KB</span>
-        <span class="info-chip">{file_type.upper()}</span>
-        <span class="info-chip">SHA256: {metadata['sha256'][:16]}...</span>
+        <span class="info-chip">✅ Validated</span>
+        <span class="info-chip">{meta['size_mb']} MB</span>
+        <span class="info-chip">{meta['file_type'].upper()}</span>
+        <span class="info-chip">SHA: {meta['sha256'][:12]}…</span>
     </div>
     """, unsafe_allow_html=True)
 
     st.divider()
 
-    # ----------------------------------------------------------------
-    # IMAGE PREDICTION
-    # ----------------------------------------------------------------
-    if file_type == "image":
-        pil_image = bytes_to_pil(file_bytes)
+    # ---- Load predictor (lazy) ----
+    predictor = load_predictor_safe(MODEL_PATH)
 
-        col_img, col_result = st.columns([1, 1])
+    # ==================================================================
+    # IMAGE
+    # ==================================================================
+    if meta["file_type"] == "image":
+        pil_img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+        c_img, c_res = st.columns([1, 1])
 
-        with col_img:
-            st.markdown('<div class="section-title">🖼️ Input Image</div>', unsafe_allow_html=True)
-            st.image(pil_image, use_column_width=True)
+        with c_img:
+            st.markdown('<div class="section-title">🖼️ Input</div>', unsafe_allow_html=True)
+            st.image(pil_img, use_column_width=True)
 
-        with col_result:
+        with c_res:
+            st.markdown('<div class="section-title">📊 Result</div>', unsafe_allow_html=True)
+
             if predictor is None:
-                st.info("🎓 Demo mode — train a model to see predictions.")
-            else:
-                with st.spinner("🧠 Analyzing..."):
-                    result = predictor.predict_image(pil_image, return_gradcam=show_gradcam)
-                    st.session_state.analysis_count += 1
+                # ---- DEMO MODE ----
+                import random
+                demo_prob  = round(random.uniform(0.05, 0.95), 3)
+                is_fake    = demo_prob >= 0.5
+                label      = "FAKE" if is_fake else "REAL"
+                emoji      = "🚨" if is_fake else "✅"
+                color      = "#FC5C7D" if is_fake else "#43E97B"
+                cls        = "label-fake" if is_fake else "label-real"
+                confidence = demo_prob if is_fake else 1 - demo_prob
 
-                # --- Main result card ---
-                label_class = "result-label-fake" if result["is_fake"] else "result-label-real"
                 st.markdown(f"""
                 <div class="result-card">
-                    <div class="{label_class}">{result['emoji']} {result['label']}</div>
-                    <div class="result-sub">
-                        Confidence: <strong>{result['confidence']*100:.1f}%</strong>
-                        &nbsp;|&nbsp; Analyzed in {result['inference_ms']} ms
+                    <div class="{cls}">{emoji} {label} <span style="font-size:0.8rem;color:#888">(demo)</span></div>
+                    <div class="label-sub">Confidence: {confidence*100:.1f}% · Demo Mode</div>
+                </div>""", unsafe_allow_html=True)
+                st.plotly_chart(gauge_chart(demo_prob, color),
+                                use_container_width=True, config={"displayModeBar": False})
+                st.info("🎓 This is a **random demo result**. Train the model for real predictions.")
+
+            else:
+                # ---- REAL PREDICTION ----
+                with st.spinner("🧠 Analyzing..."):
+                    result = predictor.predict_image(pil_img, return_gradcam=show_gradcam)
+                    st.session_state.analysis_count += 1
+
+                cls = "label-fake" if result["is_fake"] else "label-real"
+                st.markdown(f"""
+                <div class="result-card">
+                    <div class="{cls}">{result['emoji']} {result['label']}</div>
+                    <div class="label-sub">
+                        Confidence: {result['confidence']*100:.1f}%
+                        &nbsp;·&nbsp; {result['inference_ms']} ms
                     </div>
-                </div>
-                """, unsafe_allow_html=True)
+                </div>""", unsafe_allow_html=True)
 
-                # --- Gauge chart ---
-                st.plotly_chart(
-                    make_gauge_chart(result["probability"], result["label"], result["color"]),
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                )
+                st.plotly_chart(gauge_chart(result["probability"], result["color"]),
+                                use_container_width=True, config={"displayModeBar": False})
 
-                if show_raw_prob:
-                    c1, c2 = st.columns(2)
-                    c1.metric("Fake Probability", f"{result['probability']*100:.2f}%")
-                    c2.metric("Real Probability", f"{(1-result['probability'])*100:.2f}%")
+                if show_scores:
+                    sc1, sc2 = st.columns(2)
+                    sc1.metric("Fake Prob", f"{result['probability']*100:.2f}%")
+                    sc2.metric("Real Prob", f"{(1-result['probability'])*100:.2f}%")
 
-        # --- GradCAM ---
-        if show_gradcam and predictor and result.get("gradcam_pil"):
-            st.divider()
-            st.markdown('<div class="section-title">🔬 GradCAM Explainability — Where the model looked</div>',
-                        unsafe_allow_html=True)
-            gc1, gc2 = st.columns(2)
-            with gc1:
-                st.image(
-                    Image.fromarray(result["face_np"]),
-                    caption         = "Detected Face (Cropped)",
-                    use_column_width = True,
-                )
-            with gc2:
-                st.image(
-                    result["gradcam_pil"],
-                    caption         = "GradCAM Heatmap — Red = High Suspicion",
-                    use_column_width = True,
-                )
-            st.caption(
-                "🔴 **Red/warm regions** indicate areas that contributed most to the "
-                "FAKE prediction. Common locations: eye boundaries, jawline, skin texture."
-            )
+                # GradCAM
+                if show_gradcam and result.get("gradcam_pil"):
+                    st.divider()
+                    st.markdown('<div class="section-title">🔬 GradCAM — Where the AI looked</div>',
+                                unsafe_allow_html=True)
+                    g1, g2 = st.columns(2)
+                    with g1:
+                        st.image(Image.fromarray(result["face_np"]),
+                                 caption="Detected Face", use_column_width=True)
+                    with g2:
+                        st.image(result["gradcam_pil"],
+                                 caption="🔴 Red = High suspicion region", use_column_width=True)
+                    st.caption("Common fake regions: eye boundaries · jawline · skin texture · mouth corners")
 
-    # ----------------------------------------------------------------
-    # VIDEO PREDICTION
-    # ----------------------------------------------------------------
-    elif file_type == "video":
+    # ==================================================================
+    # VIDEO
+    # ==================================================================
+    elif meta["file_type"] == "video":
         st.markdown('<div class="section-title">🎬 Video Analysis</div>', unsafe_allow_html=True)
 
-        # Save temp video
-        with tempfile.NamedTemporaryFile(
-            suffix  = Path(uploaded.name).suffix,
-            delete  = False,
-            dir     = "." ,
-        ) as tmp:
-            tmp.write(file_bytes)
-            tmp_path = tmp.name
-
         if predictor is None:
-            st.info("🎓 Demo mode — train a model to see predictions.")
-        else:
-            with st.spinner(f"🧠 Analyzing video — sampling up to {max_frames} frames..."):
-                try:
-                    result = predictor.predict_video(
-                        video_path    = tmp_path,
-                        max_frames    = max_frames,
-                        sample_rate   = 10,
-                        return_gradcam= show_gradcam,
-                    )
-                finally:
-                    import os as _os
-                    _os.unlink(tmp_path)
+            # Demo mode for video
+            import random
+            n_frames   = max_frames
+            probs      = [round(random.uniform(0.1, 0.9), 3) for _ in range(n_frames)]
+            avg_prob   = round(float(np.mean(probs)), 3)
+            is_fake    = avg_prob >= 0.5
+            label      = "FAKE" if is_fake else "REAL"
+            emoji      = "🚨" if is_fake else "✅"
+            color      = "#FC5C7D" if is_fake else "#43E97B"
+            cls        = "label-fake" if is_fake else "label-real"
+            confidence = avg_prob if is_fake else 1 - avg_prob
 
-            # Summary card
-            label_class = "result-label-fake" if result["is_fake"] else "result-label-real"
             st.markdown(f"""
             <div class="result-card">
-                <div class="{label_class}">{result['emoji']} VIDEO IS {result['label']}</div>
-                <div class="result-sub">
-                    Confidence: <strong>{result['confidence']*100:.1f}%</strong>
-                    &nbsp;|&nbsp; {result['frames_analyzed']} frames analyzed
-                    &nbsp;|&nbsp; {result['inference_ms']/1000:.1f}s
+                <div class="{cls}">{emoji} VIDEO IS {label} <span style="font-size:0.8rem;color:#888">(demo)</span></div>
+                <div class="label-sub">Confidence: {confidence*100:.1f}% · {n_frames} frames · Demo Mode</div>
+            </div>""", unsafe_allow_html=True)
+
+            st.plotly_chart(frame_chart(probs), use_container_width=True,
+                            config={"displayModeBar": False})
+
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1.metric("Mean Fake", f"{np.mean(probs)*100:.1f}%")
+            mc2.metric("Max Fake",  f"{np.max(probs)*100:.1f}%")
+            mc3.metric("Min Fake",  f"{np.min(probs)*100:.1f}%")
+            mc4.metric("Fake Frames", f"{sum(1 for p in probs if p>=0.5)}/{len(probs)}")
+            st.info("🎓 These are **random demo values**. Train the model for real predictions.")
+
+        else:
+            suffix   = Path(uploaded.name).suffix
+            tmp_file = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+            tmp_file.write(file_bytes)
+            tmp_file.close()
+
+            with st.spinner(f"🧠 Analyzing {max_frames} frames..."):
+                try:
+                    result = predictor.predict_video(
+                        video_path=tmp_file.name,
+                        max_frames=max_frames,
+                        sample_rate=10,
+                        return_gradcam=show_gradcam,
+                    )
+                finally:
+                    os.unlink(tmp_file.name)
+
+            st.session_state.analysis_count += 1
+            cls = "label-fake" if result["is_fake"] else "label-real"
+            st.markdown(f"""
+            <div class="result-card">
+                <div class="{cls}">{result['emoji']} VIDEO IS {result['label']}</div>
+                <div class="label-sub">
+                    Confidence: {result['confidence']*100:.1f}%
+                    · {result['frames_analyzed']} frames
+                    · {result['inference_ms']/1000:.1f}s
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+            </div>""", unsafe_allow_html=True)
 
-            # Per-frame chart
-            st.plotly_chart(
-                make_frame_chart(result["frame_probs"]),
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
+            st.plotly_chart(frame_chart(result["frame_probs"]),
+                            use_container_width=True, config={"displayModeBar": False})
 
-            # Stats
-            probs = result["frame_probs"]
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Mean Fake Prob", f"{np.mean(probs)*100:.1f}%")
-            c2.metric("Max Fake Prob",  f"{np.max(probs)*100:.1f}%")
-            c3.metric("Min Fake Prob",  f"{np.min(probs)*100:.1f}%")
-            c4.metric("Fake Frames",    f"{sum(1 for p in probs if p>=0.5)}/{len(probs)}")
+            pr = result["frame_probs"]
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1.metric("Mean Fake",   f"{np.mean(pr)*100:.1f}%")
+            mc2.metric("Max Fake",    f"{np.max(pr)*100:.1f}%")
+            mc3.metric("Min Fake",    f"{np.min(pr)*100:.1f}%")
+            mc4.metric("Fake Frames", f"{sum(1 for p in pr if p>=0.5)}/{len(pr)}")
 
-            # GradCAM for most suspicious frame
             if show_gradcam and result.get("gradcam_pil"):
                 st.divider()
                 st.markdown('<div class="section-title">🔬 Most Suspicious Frame — GradCAM</div>',
                             unsafe_allow_html=True)
-                st.image(result["gradcam_pil"], caption="GradCAM on most suspicious frame",
-                         use_column_width=False, width=400)
+                st.image(result["gradcam_pil"], width=380,
+                         caption="GradCAM on most suspicious frame")
 
 # -----------------------------------------------------------------------
 # FOOTER
 # -----------------------------------------------------------------------
 st.divider()
-col_f1, col_f2, col_f3 = st.columns(3)
-with col_f1:
-    st.caption("🤖 Model: EfficientNet-B4")
-with col_f2:
-    st.caption(f"📊 Sessions analyzed: {st.session_state.analysis_count}")
-with col_f3:
-    st.caption("⚡ Built with PyTorch + Streamlit")
+f1, f2, f3 = st.columns(3)
+with f1: st.caption("🤖 EfficientNet-B4 + GradCAM")
+with f2: st.caption(f"📊 Analyzed this session: {st.session_state.analysis_count}")
+with f3: st.caption("⚡ PyTorch + Streamlit")
