@@ -1,0 +1,81 @@
+# ============================================================
+#  config.yaml — Project Configuration
+#  All hyperparameters, paths, and settings live here.
+#  NO secrets or API keys — those go in .env
+# ============================================================
+
+project:
+  name: "Deepfake Detection System"
+  version: "1.0.0"
+  description: "AI-powered deepfake image and video detection"
+
+# --- Data ---
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  splits_dir: "data/splits"
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  seed: 42
+
+# --- Preprocessing ---
+preprocessing:
+  image_size: 380            # EfficientNet-B4 optimal input size
+  face_margin: 0.3           # Margin around detected face (30%)
+  min_face_size: 64          # Minimum face size in pixels to process
+  detector: "mtcnn"          # Face detector: mtcnn | retinaface
+
+# --- Model ---
+model:
+  architecture: "efficientnet-b4"
+  pretrained: true
+  num_classes: 1
+  dropout_1: 0.4
+  dropout_2: 0.3
+  hidden_dim_1: 512
+  hidden_dim_2: 256
+
+# --- Training ---
+training:
+  batch_size: 32
+  epochs: 30
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-5
+  optimizer: "adamw"
+  scheduler: "cosine"        # cosine | step | plateau
+  warmup_epochs: 5           # Freeze backbone for first N epochs
+  early_stopping_patience: 7
+  gradient_clip: 1.0
+  mixed_precision: true      # AMP for faster training on GPU
+  num_workers: 4
+
+# --- Augmentation ---
+augmentation:
+  horizontal_flip: 0.5
+  brightness_contrast: 0.3
+  gaussian_blur: 0.2
+  color_jitter: 0.3
+  coarse_dropout: 0.2
+  rotation_limit: 15
+
+# --- Evaluation ---
+evaluation:
+  threshold: 0.5             # Decision threshold for FAKE classification
+  batch_size: 64
+
+# --- Paths ---
+paths:
+  model_save_dir: "models"
+  best_model: "models/best_model.pth"
+  reports_dir: "reports"
+  figures_dir: "reports/figures"
+  logs_dir: "logs"
+
+# --- App Security ---
+security:
+  max_upload_size_mb: 50
+  allowed_image_types: ["jpg", "jpeg", "png", "webp"]
+  allowed_video_types: ["mp4", "avi", "mov", "mkv"]
+  max_video_frames: 100      # Max frames to sample from a video
+  frame_sample_rate: 10      # Sample every Nth frame

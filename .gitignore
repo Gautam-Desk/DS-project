@@ -1,0 +1,180 @@
+# ============================================================
+#  DEEPFAKE DETECTION SYSTEM — .gitignore
+#  Protects: secrets, datasets, model weights, personal data
+# ============================================================
+
+# ----------------------------------------------------------
+# 🔒 SECRETS & CREDENTIALS — NEVER commit these
+# ----------------------------------------------------------
+.env
+.env.*
+!.env.example          # Only the example template is safe
+*.pem
+*.key
+*.secret
+secrets/
+credentials/
+api_keys.txt
+auth_token*
+
+# ----------------------------------------------------------
+# 📁 DATASETS — too large & may contain personal data
+# ----------------------------------------------------------
+data/raw/
+data/processed/
+data/splits/
+data/*.csv
+data/*.json
+data/*.zip
+data/*.tar
+data/*.tar.gz
+data/*.h5
+data/*.hdf5
+*.parquet
+
+# ----------------------------------------------------------
+# 🤖 MODEL WEIGHTS — large binary files
+# ----------------------------------------------------------
+models/*.pth
+models/*.pt
+models/*.ckpt
+models/*.bin
+models/*.onnx
+models/*.tflite
+models/*.pb
+checkpoints/
+*.safetensors
+
+# ----------------------------------------------------------
+# 📓 JUPYTER NOTEBOOKS (outputs may contain data)
+# ----------------------------------------------------------
+notebooks/.ipynb_checkpoints/
+**/.ipynb_checkpoints
+# Strip notebook outputs before committing:
+# Use: nbstripout --install (recommended)
+
+# ----------------------------------------------------------
+# 🐍 PYTHON
+# ----------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+.installed.cfg
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.whl
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ----------------------------------------------------------
+# 🌐 VIRTUAL ENVIRONMENTS
+# ----------------------------------------------------------
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+conda-env/
+
+# ----------------------------------------------------------
+# 📊 EXPERIMENT TRACKING & LOGS
+# ----------------------------------------------------------
+wandb/
+mlruns/
+.mlflow/
+lightning_logs/
+runs/
+logs/
+*.log
+*.out
+tensorboard_logs/
+events.out.tfevents.*
+
+# ----------------------------------------------------------
+# 📷 UPLOADED USER MEDIA (privacy protection)
+# ----------------------------------------------------------
+app/uploads/
+app/temp/
+uploads/
+temp_files/
+user_data/
+*.tmp
+
+# ----------------------------------------------------------
+# 📈 REPORTS & FIGURES (generated, not source)
+# ----------------------------------------------------------
+reports/figures/*.png
+reports/figures/*.jpg
+reports/figures/*.pdf
+reports/*.pdf
+# Keep the directory but not generated files
+!reports/figures/.gitkeep
+
+# ----------------------------------------------------------
+# 🖥️ OS FILES
+# ----------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.nfs*
+
+# ----------------------------------------------------------
+# 🛠️ IDE & EDITORS
+# ----------------------------------------------------------
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+.history/
+*.sublime-workspace
+*.sublime-project
+.ropeproject
+
+# ----------------------------------------------------------
+# ☁️ DEPLOYMENT & BUILD ARTIFACTS
+# ----------------------------------------------------------
+.streamlit/secrets.toml     # Streamlit secrets — USE secrets.toml.example
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
